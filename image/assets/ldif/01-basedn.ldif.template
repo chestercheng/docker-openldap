@@ -1,0 +1,4 @@
+dn: $LDAP_BASE_DN
+o: $LDAP_DOMAIN
+objectclass: organization
+objectclass: dcObject

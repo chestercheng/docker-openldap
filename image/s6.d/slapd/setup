@@ -1,0 +1,86 @@
+#!/usr/bin/with-contenv bash
+INIT_DONE="/var/lib/ldap/slapd-init-done"
+
+# setup slapd
+if [ ! -d /etc/ldap/slapd.d ] || [ -z "$(ls -A /etc/ldap/slapd.d)" ]; then
+    if [ ! -e /etc/ldap/assets/config/slapd.conf ] ; then
+        # config TLS
+        if [ -d $SSL_CERTS_PATH ]; then
+            TLS_CONFIG="TLSCACertificateFile $SSL_CERTS_PATH/$SSL_CA_CRT_FILENAME\n"
+            TLS_CONFIG+="TLSCertificateFile $SSL_CERTS_PATH/$SSL_CRT_FILENAME\n"
+            TLS_CONFIG+="TLSCertificateKeyFile $SSL_CERTS_PATH/$SSL_KEY_FILENAME\n"
+            TLS_CONFIG+="TLSDHParamFile $SSL_CERTS_PATH/$SSL_DH_PARAM_FILENAME\n"
+            export LDAP_TLS_SECTION=$(echo -e $TLS_CONFIG)
+        fi
+
+        # config replication
+        if [ ! -z $LDAP_REPLICATION_HOSTS ]; then
+            MIRROR_CONFIG=""
+            i=1
+            for host in $(echo $LDAP_REPLICATION_HOSTS | tr ',' '\n'); do
+                if [ $host == $LDAP_HOST ]; then
+                    uri="ldap:///"
+                else
+                    uri="ldap://$host"
+                fi
+                MIRROR_CONFIG+="serverID 00$i $uri\n"
+                MIRROR_CONFIG+="syncrepl rid=10$i provider=$uri\n"
+                MIRROR_CONFIG+="    binddn=\"cn=admin,dc=local\"\n"
+                MIRROR_CONFIG+="    bindmethod=simple\n"
+                MIRROR_CONFIG+="    credentials=\"$LDAP_ROOT_PW\"\n"
+                MIRROR_CONFIG+="    searchbase=\"dc=local\"\n"
+                MIRROR_CONFIG+="    type=refreshAndPersist\n"
+                MIRROR_CONFIG+="    retry=\"60 +\"\n"
+                ((i++))
+            done
+            MIRROR_CONFIG+="mirrormode on\n"
+            MIRROR_CONFIG+="overlay syncprov\n"
+
+            export LDAP_REPLICATION_SECTION=$(echo -e $MIRROR_CONFIG)
+        fi
+
+        /usr/bin/envsubst < /etc/ldap/assets/config/slapd.conf.template > /etc/ldap/assets/config/slapd.conf
+    fi
+    # create dir
+    mkdir -p /etc/ldap/slapd.d
+
+    /usr/sbin/slaptest -f /etc/ldap/assets/config/slapd.conf -F /etc/ldap/slapd.d
+
+    # fix file permissions
+    chown -R openldap:openldap /etc/ldap/slapd.d
+fi
+
+# init ldap database
+if [ ! -e "$INIT_DONE" ]; then
+    # remove default ldap db
+    rm -rf /var/lib/ldap
+
+    # create dir
+    mkdir -p /var/lib/ldap
+    cp /usr/share/slapd/DB_CONFIG /var/lib/ldap/DB_CONFIG
+
+    # fix file permissions
+    chown -R openldap:openldap /var/lib/ldap
+
+    # start OpenLDAP
+    /usr/sbin/slapd -u openldap -g openldap -h "ldap:// ldapi:///" -F /etc/ldap/slapd.d &
+    while [ -z $(ldapwhoami -Y EXTERNAL -Q -H ldapi:/// 2> /dev/null) ]; do sleep 0.1; done
+
+    # init database
+    export LDAP_READONLY_USER_PASSWORD_ENCRYPTED=$(slappasswd -s $LDAP_BIND_PW)
+    for tmpfl in $(find /etc/ldap/assets -name \*.ldif.template -type f); do
+        fl=$(echo $tmpfl | sed 's/\.template$//g')
+        /usr/bin/envsubst < $tmpfl > $fl
+    done
+    for f in $(find /etc/ldap/assets -name \*.ldif -type f | sort); do
+        ldapadd -c -Y EXTERNAL -Q -H ldapi:/// -f $f
+    done
+
+    # stop OpenLDAP
+    SLAPD_PID=$(cat /run/slapd/slapd.pid)
+    kill -15 $SLAPD_PID
+    while [ -e /proc/$SLAPD_PID ]; do sleep 0.1; done
+
+    # setup done
+    echo "$(date +%s)" > "$INIT_DONE"
+fi

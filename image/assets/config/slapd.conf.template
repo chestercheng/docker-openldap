@@ -1,0 +1,67 @@
+#
+# See slapd.conf(5) for details on configuration options.
+# This file should NOT be world readable.
+#
+
+#
+# Load schema files
+#
+include         /etc/ldap/schema/core.schema
+include         /etc/ldap/schema/cosine.schema
+include         /etc/ldap/schema/duaconf.schema
+include         /etc/ldap/schema/inetorgperson.schema
+include         /etc/ldap/schema/misc.schema
+include         /etc/ldap/schema/nis.schema
+include         /etc/ldap/schema/sudoers.schema
+
+#
+# Set daemon options
+#
+pidfile         /var/run/slapd/slapd.pid
+argsfile        /var/run/slapd/slapd.args
+
+#
+# Allow LDAPv2 client connections.  This is NOT the default.
+#
+allow bind_v2
+
+#
+# Load dynamic backend modules
+#
+modulepath  /usr/lib/ldap
+moduleload  back_mdb
+moduleload  syncprov
+
+#
+# The next three lines allow use of TLS for encrypting connections using a
+# dummy test certificate which you can generate by running.
+#
+$LDAP_TLS_SECTION
+
+#
+# Database definitions
+#
+database config
+access to *
+       by dn.exact=gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth manage
+       by * break
+
+database mdb
+suffix "$LDAP_BASE_DN"
+rootdn "cn=admin,$LDAP_BASE_DN"
+rootpw "$LDAP_ROOT_PW"
+directory /var/lib/ldap
+
+sasl-host localhost
+sasl-secprops none
+
+index objectClass,entryCSN,entryUUID eq
+
+access to attrs=userPassword
+       by * auth
+access to *
+       by dn.exact=gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth manage
+       by dn.exact=cn=bind,$LDAP_BASE_DN read
+       by anonymous none
+
+$LDAP_REPLICATION_SECTION

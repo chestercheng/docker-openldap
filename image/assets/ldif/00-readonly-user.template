@@ -1,0 +1,4 @@
+dn: cn=bind,$LDAP_BASE_DN
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+userPassword: $LDAP_READONLY_USER_PASSWORD_ENCRYPTED

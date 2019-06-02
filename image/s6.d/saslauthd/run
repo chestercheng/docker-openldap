@@ -1,0 +1,29 @@
+#!/usr/bin/with-contenv bash
+if [ ! -f /etc/saslauthd.conf ]; then
+    cat << EOF > /etc/saslauthd.conf
+ldap_servers: $AD_URI
+ldap_search_base: $AD_BASE_DN
+ldap_timeout: 10
+ldap_filter: sAMAccountName=%U
+ldap_bind_dn: $AD_BIND_DN
+ldap_password: $AD_BIND_PW
+ldap_deref: never
+ldap_restart: yes
+ldap_scope: sub
+ldap_use_sasl: no
+ldap_start_tls: no
+ldap_version: 3
+ldap_auth_method: bind
+EOF
+fi
+
+if [ ! -f /etc/ldap/sasl2/slapd.conf ]; then
+    cat << EOF > /etc/ldap/sasl2/slapd.conf
+pwcheck_method: saslauthd
+saslauthd_path: /var/run/saslauthd/mux
+EOF
+fi
+
+pushd /root > /dev/null
+    /usr/sbin/saslauthd -d -a ldap -c -m /var/run/saslauthd -O /etc/saslauthd.conf
+popd
