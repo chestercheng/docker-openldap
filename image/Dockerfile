@@ -1,5 +1,6 @@
 FROM debian:stretch-slim
-MAINTAINER chestercheng <chester7864@gmail.com>
+
+LABEL maintainer="chestercheng <chester7864@gmail.com>"
 
 # Default env variables
 ENV LDAP_DOMAIN="example.org"
